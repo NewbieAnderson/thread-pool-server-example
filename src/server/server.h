@@ -12,11 +12,16 @@
 #include <netinet/in.h>
 #include <poll.h>
 
+#include "./work_queue.h"
+
 #define SERVER_PORT 3000
 #define MAX_WAITING_QUEUE 256
 #define THREAD_STATE_IS_NOT_WORKING 0
 #define THREAD_STATE_IS_WORKING 1
 #define THREAD_STATE_IS_FINISHED 2
+
+struct task *g_task_queue_root;
+pthread_mutex_t g_task_queue_mutex;
 
 struct server_info {
     struct sockaddr_in server_addr;
@@ -30,18 +35,18 @@ struct thread {
     pthread_t tid;
     pthread_mutex_t sync_mutex;
     pthread_cond_t sync_cond;
-    struct sockaddr_in client_addr;
     int client_socket;
-    int task_num;
     unsigned char state;
 };
 
 struct ui_thread {
     pthread_t tid;
     const struct thread *tasks_ptr;
-    int num_of_tasks;
+    int num_of_threads;
 };
 
 void *task_function(void *arg);
+
+void *render_status(void *arg);
 
 #endif

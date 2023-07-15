@@ -1,7 +1,16 @@
+CC=gcc
+CFLAGS=-pthread
+SRCDIR=./src
+BINDIR=./bin
+
 all: server client
 
-server:
-	gcc -pthread -o ./bin/server/server ./src/server/server.c
+server: $(SRCDIR)/server/main.c $(SRCDIR)/server/server.c $(SRCDIR)/server/work_queue.c
+	$(CC) $(CFLAGS) -o $(BINDIR)/server/server $^
 
-client:
-	gcc -o ./bin/client/client ./src/client/client.c
+client: $(SRCDIR)/client/client.c
+	$(CC) $(CFLAGS) -o $(BINDIR)/client/client $^
+
+clean:
+	rm -f $(BINDIR)/server/server
+	rm -f $(BINDIR)/client/client
