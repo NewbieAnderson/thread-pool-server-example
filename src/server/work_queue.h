@@ -6,7 +6,7 @@ struct task {
     int client_socket;
 };
 
-void push_back_task(struct task **root, int client_socket);
+int push_back_task(struct task **root, int client_socket);
 
 struct task *pop_front_task(struct task **root);
 
