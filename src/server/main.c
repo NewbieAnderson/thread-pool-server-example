@@ -1,75 +1,57 @@
-#include "./server.h"
+#include "server.h"
 
 int main(void)
 {
-    struct thread *threads;
-    struct ui_thread ui;
-    struct server_info server;
+    int i;
+    int nfds;
+    int nbytes;
+    int client_socket;
+    struct epoll_event event;
     struct sockaddr_in client_addr;
     socklen_t client_addr_len = sizeof(struct sockaddr_in);
-    int client_socket;
-    int ret;
-    int i;
-    server.server_socket = socket(PF_INET, SOCK_STREAM, 0);
-    if (server.server_socket == -1) {
-        perror("socket() - failed to create server socket ");
-        exit(1);
+    if (create_server(3000, 4) == -1) {
+        printf("main() - failed to create server.\n");
+        return -1;
     }
-    server.num_of_threads = 4;
-    threads = malloc(sizeof(struct thread) * server.num_of_threads);
-    g_task_queue_root = NULL;
-    pthread_mutex_init(&g_task_queue_mutex, NULL);
-    if (threads == NULL) {
-        printf("malloc() - failed to allocate memory\n");
-        exit(1);
-    }
-    for (i = 0; i < server.num_of_threads; ++i) {
-        threads[i].state = THREAD_STATE_IS_NOT_WORKING;
-        pthread_mutex_init(&(threads[i].sync_mutex), NULL);
-        pthread_cond_init(&(threads[i].sync_cond), NULL);
-        pthread_create(&(threads[i].tid), NULL, task_function, &threads[i]);
-    }
-    server.port = SERVER_PORT;
-    memset(&server.server_addr, 0, sizeof(struct sockaddr_in));
-    server.server_addr.sin_family = AF_INET;
-    server.server_addr.sin_addr.s_addr = htonl(INADDR_ANY);
-    server.server_addr.sin_port = htons(server.port);
-    if (bind(server.server_socket, (struct sockaddr *)&server.server_addr, sizeof(struct sockaddr_in)) == -1) {
-        perror("bind() - failed to bind socket ");
-        exit(1);
-    }
-    if (listen(server.server_socket, MAX_WAITING_QUEUE) == -1) {
-        perror("listen() - failed to listen socket ");
-        exit(1);
-    }
-    ui.tasks_ptr = threads;
-    ui.num_of_threads = server.num_of_threads;
-    pthread_create(&ui.tid, NULL, render_status, &ui);
     while (1) {
-        client_socket = accept(server.server_socket, (struct sockaddr *)&client_addr, &client_addr_len);
-        if (client_socket == -1) {
-            perror("failed to accept new client ");
-            break;
+        printf("waiting...\n");
+        nfds = epoll_wait(g_server_incoming_epfd, g_server_incomming_events, MAX_CONNECTION_SIZE, -1);
+        if (nfds < 0) {
+            perror("epoll_wait() failed to waiting socket events ");
+            goto exit_loop;
         }
-        pthread_mutex_lock(&g_task_queue_mutex);
-        push_back_task(&g_task_queue_root, client_socket);
-        pthread_mutex_unlock(&g_task_queue_mutex);
-        for (i = 0; i < server.num_of_threads; ++i) {
-            if (threads[i].state == THREAD_STATE_IS_WORKING)
+        printf("nfds : %d\n", nfds);
+        // todo detect tcp disconnection
+        for (i = 0; i < nfds; ++i) {
+            if (((struct session *)(g_server_incomming_events[i].data.ptr))->sockfd == g_server_socket) {
+                client_socket = accept(g_server_socket, (struct sockaddr *)&client_addr, &client_addr_len);
+                printf("new connection created!\n");
+                event.data.ptr = create_new_session(client_socket, &client_addr);
+                event.events = EPOLLIN; // How to detect TCP Disconnection? -> EPOLLHUP | EPOLLERR
+                if (epoll_ctl(g_server_incoming_epfd, EPOLL_CTL_ADD, client_socket, &event) == -1) {
+                    perror("epoll_ctl() - failed to add client's socket ");
+                    return -1;
+                }
+                if (recv_and_push_to_queue(client_socket) == -1) {
+                    printf("main() - failed to add request to queue\n");
+                    goto exit_loop;
+                }
                 continue;
-            pthread_mutex_lock(&(threads[i].sync_mutex));
-            threads[i].state = THREAD_STATE_IS_WORKING;
-            pthread_cond_signal(&(threads[i].sync_cond));
-            pthread_mutex_unlock(&(threads[i].sync_mutex));
-            break;
+            }
+            if (write(((struct session *)(g_server_incomming_events[i].data.ptr))->sockfd, "disconn_test\n", strlen("disconn_test\n")) == -1) {
+                printf("tcp disconnected!\n");
+                close(((struct session *)(g_server_incomming_events[i].data.ptr))->sockfd);
+                continue;
+            }
+            if (recv_and_push_to_queue(((struct session *)(g_server_incomming_events[i].data.ptr))->sockfd) == -1) {
+                printf("main() - failed to add request to queue\n");
+                goto exit_loop;
+            }
         }
+        // TODO : Wake up threads...
+        // wake_up_thread();
     }
-    for (i = 0; i < server.num_of_threads; ++i) {
-        pthread_mutex_destroy(&(threads[i].sync_mutex));
-        pthread_cond_destroy(&(threads[i].sync_cond));
-    }
-    close(server.server_socket);
-    free(threads);
-    threads = NULL;
+exit_loop:
+    delete_server();
     return 0;
 }

@@ -1,52 +1,27 @@
 #ifndef SERVER_H
 #define SERVER_H
 
+#include <arpa/inet.h>
+#include <pthread.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <unistd.h>
-#include <pthread.h>
-#include <sys/types.h>
-#include <sys/socket.h>
 #include <sys/epoll.h>
-#include <netinet/in.h>
-#include <poll.h>
+#include <unistd.h>
 
-#include "./work_queue.h"
+#include "defs.h"
+#include "worker_thread.h"
 
-#define SERVER_PORT 3000
-#define MAX_WAITING_QUEUE 256
-#define THREAD_STATE_IS_NOT_WORKING 0
-#define THREAD_STATE_IS_WORKING 1
-#define THREAD_STATE_IS_FINISHED 2
+extern int g_server_port;
+extern int g_server_socket;
+extern int g_server_incoming_epfd;
+extern int g_server_thread_count;
+extern struct sockaddr_in g_server_addr;
+extern struct epoll_event *g_server_incomming_events;
+extern pthread_mutex_t g_server_mutex;
 
-struct task *g_task_queue_root;
-pthread_mutex_t g_task_queue_mutex;
+int create_server(int port, int thread_count);
 
-struct server_info {
-    struct sockaddr_in server_addr;
-    int server_socket;
-    int num_of_threads;
-    int ip;
-    int port;
-};
-
-struct thread {
-    pthread_t tid;
-    pthread_mutex_t sync_mutex;
-    pthread_cond_t sync_cond;
-    int client_socket;
-    unsigned char state;
-};
-
-struct ui_thread {
-    pthread_t tid;
-    const struct thread *tasks_ptr;
-    int num_of_threads;
-};
-
-void *task_function(void *arg);
-
-void *render_status(void *arg);
+int delete_server(void);
 
 #endif
