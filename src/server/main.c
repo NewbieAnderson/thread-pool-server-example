@@ -4,52 +4,60 @@ int main(void)
 {
     int i;
     int nfds;
-    int nbytes;
+    int flag = 0;
     int client_socket;
+    const int on = 1;
     struct epoll_event event;
     struct sockaddr_in client_addr;
+    struct session *session_ptr = NULL;
     socklen_t client_addr_len = sizeof(struct sockaddr_in);
-    if (create_server(3000, 4) == -1) {
+    if (create_server(3000, 8) == -1) {
         printf("main() - failed to create server.\n");
         return -1;
     }
     while (1) {
-        printf("waiting...\n");
         nfds = epoll_wait(g_server_incoming_epfd, g_server_incomming_events, MAX_CONNECTION_SIZE, -1);
         if (nfds < 0) {
             perror("epoll_wait() failed to waiting socket events ");
             goto exit_loop;
         }
-        printf("nfds : %d\n", nfds);
-        // todo detect tcp disconnection
         for (i = 0; i < nfds; ++i) {
-            if (((struct session *)(g_server_incomming_events[i].data.ptr))->sockfd == g_server_socket) {
+            session_ptr = g_server_incomming_events[i].data.ptr;
+            if (session_ptr->sockfd == g_server_socket) {
+                // change this socket to nonblocking mode
                 client_socket = accept(g_server_socket, (struct sockaddr *)&client_addr, &client_addr_len);
-                printf("new connection created!\n");
                 event.data.ptr = create_new_session(client_socket, &client_addr);
-                event.events = EPOLLIN; // How to detect TCP Disconnection? -> EPOLLHUP | EPOLLERR
+                event.events = EPOLLIN;
                 if (epoll_ctl(g_server_incoming_epfd, EPOLL_CTL_ADD, client_socket, &event) == -1) {
                     perror("epoll_ctl() - failed to add client's socket ");
                     return -1;
                 }
-                if (recv_and_push_to_queue(client_socket) == -1) {
-                    printf("main() - failed to add request to queue\n");
-                    goto exit_loop;
-                }
                 continue;
             }
-            if (write(((struct session *)(g_server_incomming_events[i].data.ptr))->sockfd, "disconn_test\n", strlen("disconn_test\n")) == -1) {
-                printf("tcp disconnected!\n");
-                close(((struct session *)(g_server_incomming_events[i].data.ptr))->sockfd);
-                continue;
-            }
-            if (recv_and_push_to_queue(((struct session *)(g_server_incomming_events[i].data.ptr))->sockfd) == -1) {
+            /*
+                NOTICE : recv_and_push_to_queue() & write() which is first? (#1 vs #2 which is first?)
+            */
+            // #1
+            if (recv_and_push_to_queue(session_ptr->sockfd) == -1) {
                 printf("main() - failed to add request to queue\n");
                 goto exit_loop;
             }
+            // NOTICE : TCP "Connection Reset by Peer" error occurs
+            // NOTICE : is this code detect TCP disconnection correctly?
+            // #2
+            if (write(session_ptr->sockfd, "disconn_test\n", strlen("disconn_test\n")) == -1) {
+                if (errno == EPIPE) {
+                    printf("cient\'s bad pipe\n");
+                } else if (errno == EBADF) {
+                    printf("client\'s bad file descriptor\n");
+                }
+                perror("failed to write towards server ");
+                close(session_ptr->sockfd);
+                //delete_session(session_ptr->sockfd);
+                continue;
+            }
         }
-        // TODO : Wake up threads...
-        // wake_up_thread();
+        try_wake_up_thread();
     }
 exit_loop:
     delete_server();

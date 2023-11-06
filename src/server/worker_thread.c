@@ -2,14 +2,13 @@
 
 int g_thread_count;
 pthread_t *g_threads;
-pthread_mutex_t g_thread_mutexies;
 u8 *g_thread_state;
 
 struct task_node *g_task_queue;
-int g_task_queue_size = 0;
-int g_task_queue_capacity = 0;
-int g_task_queue_read_ptr = 0;
-int g_task_queue_write_ptr = 0;
+int g_task_queue_size;
+int g_task_queue_capacity;
+int g_task_queue_read_ptr;
+int g_task_queue_write_ptr;
 pthread_mutex_t g_task_queue_mutex;
 
 pthread_mutex_t *g_task_queue_sync_mutex;
@@ -28,23 +27,22 @@ int init_thread_pool(int thread_count, int max_wating_queue_size)
         printf("init_thread_pool() - failed to allocate g_threads\n");
         return -1;
     }
-    pthread_mutex_init(&g_session_buffer_mutex, NULL);
     g_task_queue_size = 0;
     g_task_queue_capacity = max_wating_queue_size;
     g_task_queue_read_ptr = 0;
     g_task_queue_write_ptr = 0;
     g_thread_count = thread_count;
-    g_task_queue = malloc(sizeof(struct task_node) * g_thread_count);
+    g_task_queue = malloc(sizeof(struct task_node) * g_task_queue_capacity);
     if (g_task_queue == NULL) {
         printf("init_thread_pool() - failed to allocate g_task_queue\n");
         return -1;
     }
-    g_task_queue_sync_mutex = malloc(sizeof(u8) * g_thread_count);
+    g_task_queue_sync_mutex = malloc(sizeof(pthread_mutex_t) * g_thread_count);
     if (g_task_queue_sync_mutex == NULL) {
         printf("init_thread_pool() - failed to allocate g_task_queue_sync_mutex\n");
         return -1;
     }
-    g_task_queue_sync_cond = malloc(sizeof(u8) * g_thread_count);
+    g_task_queue_sync_cond = malloc(sizeof(pthread_cond_t) * g_thread_count);
     if (g_task_queue_sync_cond == NULL) {
         printf("init_thread_pool() - failed to allocate g_task_queue_sync_cond\n");
         return -1;
@@ -54,6 +52,7 @@ int init_thread_pool(int thread_count, int max_wating_queue_size)
         printf("init_thread_pool() - failed to allocate g_thread_state\n");
         return -1;
     }
+    pthread_mutex_init(&g_task_queue_mutex, NULL);
     for (i = 0; i < g_thread_count; ++i) {
         if (pthread_create(&g_threads[i], NULL, thread_routine, (void *)i) < 0)
             goto failed;
@@ -96,35 +95,31 @@ int destroy_thread_pool(void)
     return 0;
 }
 
-// TODO : need to set recive timeout -> 5000ms (5sec)
+// NOTICE : both recv_and_push_to_queue() and pop_task_queue_copy() could make deadlock!
 int recv_and_push_to_queue(int sockfd)
 {
     int nbytes;
-    pthread_mutex_lock(&g_task_queue_mutex);
     if (g_task_queue_size >= g_task_queue_capacity) {
-        printf("read_and_push_to_queue() : cannot add more requests on task queue\n");
-        pthread_mutex_unlock(&g_task_queue_mutex);
-        return -1;
-    }
-    nbytes = recv(sockfd, g_task_queue[g_task_queue_write_ptr].recv_buffer, MAX_BUFFER_SIZE, 0);
-    if (nbytes == -1) {
-        int errnum = errno;
-        printf("errno : %d\n", errno);
-        if (errno == EPIPE || errno == ECONNRESET) {
-            printf("already disconnected by client!\n");
-            close(sockfd);
-            pthread_mutex_unlock(&g_task_queue_mutex);
-            return 0;
-        }
-        perror("read_and_push_to_queue() - failed to recv from socket ");
-        pthread_mutex_unlock(&g_task_queue_mutex);
-        return -1;
-    } else if (nbytes == 0) {
-        printf("tcp connection finished\n");
-        close(sockfd);
+        printf("read_and_push_to_queue() - cannot add more requests on task queue\n");
         return 0;
     }
-    printf("recv message : %s\n", g_task_queue[g_task_queue_write_ptr].recv_buffer);
+    pthread_mutex_lock(&g_task_queue_mutex);
+    nbytes = recv(sockfd, g_task_queue[g_task_queue_write_ptr].recv_buffer, MAX_BUFFER_SIZE, 0);
+    if (nbytes == 0) {
+        close(sockfd);
+        pthread_mutex_unlock(&g_task_queue_mutex);
+        printf("recv_and_push_to_queue() - read 0 bytes, client disconnected\n");
+        return 0;
+    } else if (nbytes == -1) {
+        close(sockfd);
+        pthread_mutex_unlock(&g_task_queue_mutex);
+        printf("recv_and_push_to_queue() - failed to read bytes\n");
+        return -1;
+    }
+    if (strcmp(g_task_queue[g_task_queue_write_ptr].recv_buffer, "kill\n") == 0) {
+        pthread_mutex_unlock(&g_task_queue_mutex);
+        return -1;
+    }
     g_task_queue_write_ptr = (g_task_queue_write_ptr + 1) % g_task_queue_capacity;
     ++g_task_queue_size;
     pthread_mutex_unlock(&g_task_queue_mutex);
@@ -133,21 +128,38 @@ int recv_and_push_to_queue(int sockfd)
 
 int pop_task_queue_copy(struct task_node *task)
 {
-    pthread_mutex_lock(&g_task_queue_mutex);
     if (g_task_queue_size <= 0) {
-        printf("pop_task_queue_copy() : cannot remove anymore \n");
+        printf("pop_task_queue_copy() - cannot remove anymore \n");
         return -1;
     }
-    memcpy(task, &g_task_queue[g_task_queue_read_ptr], sizeof(struct task_node));
+    pthread_mutex_lock(&g_task_queue_mutex); // could make a deadlock!
+    memcpy(task, &g_task_queue[g_task_queue_read_ptr], sizeof(struct task_node)); // segmentaion fault error!
     g_task_queue_read_ptr = (g_task_queue_read_ptr + 1) % g_task_queue_capacity;
     --g_task_queue_size;
     pthread_mutex_unlock(&g_task_queue_mutex);
     return 0;
 }
 
+int try_wake_up_thread(void)
+{
+    int i;
+    for (i = 0; i < g_thread_count; ++i) {
+        if (g_thread_state[i] == THREAD_STATE_IS_WORKING)
+            continue;
+        // NOTICE : this lock function could make dead lock
+        // NOTICE : is locking/unlocking necessary to signal specific thread? 
+        // pthread_mutex_lock(&(g_task_queue_sync_mutex[i]));
+        g_thread_state[i] = THREAD_STATE_IS_WORKING;
+        pthread_cond_signal(&(g_task_queue_sync_cond[i]));
+        // pthread_mutex_unlock(&(g_task_queue_sync_mutex[i]));
+    }
+    return 0;
+}
+
 void *thread_routine(void *args)
 {
     struct task_node task;
+    task.sockfd = -1;
     int thread_idx = (int)args;
     pthread_mutex_init(&(g_task_queue_sync_mutex[thread_idx]), NULL);
     pthread_cond_init(&(g_task_queue_sync_cond[thread_idx]), NULL);
@@ -156,11 +168,15 @@ void *thread_routine(void *args)
         pthread_mutex_lock(&(g_task_queue_sync_mutex[thread_idx]));
         while (g_thread_state[thread_idx] == THREAD_STATE_IS_NOT_WORKING)
             pthread_cond_wait(&(g_task_queue_sync_cond[thread_idx]), &(g_task_queue_sync_mutex[thread_idx]));
-        while (g_buf_size > 0) {
-            // process something!
+        pthread_mutex_unlock(&(g_task_queue_sync_mutex[thread_idx]));
+        while (g_task_queue_size > 0) {
             pop_task_queue_copy(&task);
-            printf("message : %s\n", task.recv_buffer);
+            if (task.sockfd == -1)
+                continue;
+            printf("thread #%d, message : %s\n", thread_idx + 1, task.recv_buffer);
+            task.sockfd = -1;
         }
+        pthread_mutex_lock(&(g_task_queue_sync_mutex[thread_idx]));
         g_thread_state[thread_idx] = THREAD_STATE_IS_NOT_WORKING;
         pthread_mutex_unlock(&(g_task_queue_sync_mutex[thread_idx]));
     }

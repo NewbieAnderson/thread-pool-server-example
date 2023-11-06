@@ -38,10 +38,6 @@ int create_server(int port, int thread_count)
         printf("create_server() - failed to allocate g_session_buffer\n");
         return -1;
     }
-    if (init_thread_pool(g_server_thread_count, MAX_WAITING_QUEUE) == -1) {
-        printf("create_server() - failed to init thread pool\n");
-        return -1;
-    }
     if (init_session_buffer(SESSION_BUFFER_CAPACITY, sizeof(struct session)) == -1) {
         printf("create_server - failed to init session buffer\n");
         return -1;
@@ -59,6 +55,10 @@ int create_server(int port, int thread_count)
     g_server_incomming_events = malloc(sizeof(struct epoll_event) * MAX_CONNECTION_SIZE);
     if (g_server_incomming_events == NULL) {
         perror("malloc() - failed to allocate epoll_event objects ");
+        return -1;
+    }
+    if (init_thread_pool(g_server_thread_count, MAX_WAITING_QUEUE) == -1) {
+        printf("create_server() - failed to init thread pool\n");
         return -1;
     }
     return 0;

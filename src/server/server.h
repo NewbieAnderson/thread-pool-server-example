@@ -2,11 +2,13 @@
 #define SERVER_H
 
 #include <arpa/inet.h>
+#include <fcntl.h>
 #include <pthread.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <sys/epoll.h>
+#include <sys/time.h>
 #include <unistd.h>
 
 #include "defs.h"

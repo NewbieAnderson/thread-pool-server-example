@@ -57,12 +57,23 @@ int clear_full_buffer(void)
 
 struct session *create_new_session(int sockfd, struct sockaddr_in *addr)
 {
+    int flag;
     struct session temp;
     struct session *new_session_ptr;
     u8 ip_bytes[4];
     temp.sockfd = sockfd;
     temp.port = ntohs(addr->sin_port);
     memcpy(&(temp.ipv4), &(addr->sin_addr.s_addr), sizeof(unsigned char) * 4);
+    // NOTICE : both client and server sockets are setted into blocking mode
+    flag = fcntl(sockfd, F_GETFL, 0);
+    if (flag == -1) {
+        perror("create_new_session() - failed to load socket\'s falgs ");
+        return -1;
+    }
+    if (fcntl(sockfd, F_SETFL, flag | O_NONBLOCK) == -1) {
+        perror("create_new_session() - failed set socket to non-blocking mode ");
+        return -1;
+    }
     // NOTICE : same as g_session_buffer[g_write_ptr] = item;
     pthread_mutex_lock(&g_session_buffer_mutex);
     if (g_buf_size > 0 && g_buf_size >= g_buf_capacity) {

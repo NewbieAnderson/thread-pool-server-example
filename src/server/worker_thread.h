@@ -17,7 +17,6 @@ struct task_node {
 
 extern int g_thread_count;
 extern pthread_t *g_threads;
-extern pthread_mutex_t g_thread_mutexies;
 extern u8 *g_thread_state;
 extern struct task_node *g_task_queue;
 extern int g_task_queue_size;
@@ -37,7 +36,7 @@ int recv_and_push_to_queue(int sockfd);
 int pop_task_queue_copy(struct task_node *task);
 
 // TODO : Implement this function
-int wake_up_thread();
+int try_wake_up_thread(void);
 
 void *thread_routine(void *args);
 
