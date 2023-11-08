@@ -16,19 +16,19 @@ struct task_node {
     char recv_buffer[MAX_BUFFER_SIZE];
 };
 
-extern int g_thread_count;
-extern pthread_t *g_threads;
-extern u8 *g_thread_state;
-extern struct task_node *g_task_queue;
-extern int g_task_queue_size;
-extern int g_task_queue_capacity;
-extern int g_task_queue_read_ptr;
-extern int g_task_queue_write_ptr;
-extern pthread_mutex_t g_task_queue_mutex;
-extern pthread_mutex_t *g_thread_sync_mutex;
-extern pthread_cond_t *g_thread_sync_cond;
+static int g_thread_count;
+static int g_task_queue_size;
+static int g_task_queue_capacity;
+static int g_task_queue_read_ptr;
+static int g_task_queue_write_ptr;
+static struct task_node *g_task_queue;
+static pthread_t *g_threads;
+static u8 *g_thread_state;
+static pthread_mutex_t g_task_queue_mutex;
+static pthread_mutex_t *g_thread_sync_mutex;
+static pthread_cond_t *g_thread_sync_cond;
 
-int init_thread_pool(int thread_count, int max_wating_queue_size);
+int init_thread_pool(int thread_count, int max_waiting_queue_size);
 
 int destroy_thread_pool(void);
 
@@ -36,9 +36,8 @@ int recv_and_push_to_queue(int sockfd);
 
 int pop_task_queue_copy(struct task_node *task);
 
-// TODO : Implement this function
 int try_wake_up_thread(void);
 
-void *thread_routine(void *args);
+static void *thread_routine(void *thread_num);
 
 #endif
