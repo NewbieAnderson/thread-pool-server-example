@@ -26,4 +26,8 @@ int create_server(int port, int thread_count);
 
 int delete_server(void);
 
+int handle_tcp_conn_err(void);
+
+int disconn_client(void);
+
 #endif

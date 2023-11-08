@@ -12,9 +12,6 @@
 #include "defs.h"
 #include "server.h"
 
-#define TRY_SESSION_LOCK    pthread_mutex_lock(&g_session_buffer_mutex);
-#define TRY_SESSION_UNLOCK  pthread_mutex_unlock(&g_session_buffer_mutex);
-
 struct session {
     int sockfd;
     unsigned short port;
@@ -27,7 +24,7 @@ extern int g_buf_capacity;
 extern int g_read_ptr;
 extern int g_write_ptr;
 // TODO : how about to change session buffer to linked-list?
-extern struct session *g_session_buffer;
+extern struct session *g_session;
 extern pthread_mutex_t g_session_buffer_mutex;
 
 int init_session_buffer(const int buf_capacity, const int item_byte_size);

@@ -33,8 +33,8 @@ int create_server(int port, int thread_count)
         perror("listen() - failed to listen server socket");
         return -1;
     }
-    g_session_buffer = malloc(sizeof(struct session) * g_task_queue_capacity);
-    if (g_session_buffer == NULL) {
+    g_session = malloc(sizeof(struct session) * g_task_queue_capacity);
+    if (g_session == NULL) {
         printf("create_server() - failed to allocate g_session_buffer\n");
         return -1;
     }

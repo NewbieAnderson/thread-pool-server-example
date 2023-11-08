@@ -3,6 +3,7 @@
 
 #include <errno.h>
 #include <signal.h>
+#include <unistd.h>
 
 #include "defs.h"
 #include "session_buffer.h"
@@ -24,8 +25,8 @@ extern int g_task_queue_capacity;
 extern int g_task_queue_read_ptr;
 extern int g_task_queue_write_ptr;
 extern pthread_mutex_t g_task_queue_mutex;
-extern pthread_mutex_t *g_task_queue_sync_mutex;
-extern pthread_cond_t *g_task_queue_sync_cond;
+extern pthread_mutex_t *g_thread_sync_mutex;
+extern pthread_cond_t *g_thread_sync_cond;
 
 int init_thread_pool(int thread_count, int max_wating_queue_size);
 

@@ -29,18 +29,10 @@ int main(void)
                 event.data.ptr = create_new_session(client_socket, &client_addr);
                 event.events = EPOLLIN;
                 if (epoll_ctl(g_server_incoming_epfd, EPOLL_CTL_ADD, client_socket, &event) == -1) {
-                    perror("epoll_ctl() - failed to add client's socket ");
+                    perror("failed to add client's socket ");
                     return -1;
                 }
                 continue;
-            }
-            /*
-                NOTICE : recv_and_push_to_queue() & write() which is first? (#1 vs #2 which is first?)
-            */
-            // #1
-            if (recv_and_push_to_queue(session_ptr->sockfd) == -1) {
-                printf("main() - failed to add request to queue\n");
-                goto exit_loop;
             }
             // NOTICE : TCP "Connection Reset by Peer" error occurs
             // NOTICE : is this code detect TCP disconnection correctly?
@@ -53,8 +45,15 @@ int main(void)
                 }
                 perror("failed to write towards server ");
                 close(session_ptr->sockfd);
-                //delete_session(session_ptr->sockfd);
+                // TODO : add this code later!
+                // delete_session(session_ptr->sockfd);
                 continue;
+            }
+            // NOTICE : recv_and_push_to_queue() & write() which is first? (#1 vs #2 which is first?)
+            // #1
+            if (recv_and_push_to_queue(session_ptr->sockfd) == -1) {
+                printf("failed to add request to queue\n");
+                goto exit_loop;
             }
         }
         try_wake_up_thread();
