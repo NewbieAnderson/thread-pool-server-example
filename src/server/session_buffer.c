@@ -1,115 +1,100 @@
 #include "session_buffer.h"
 
-int g_buf_size;
-int g_buf_capacity;
-int g_read_ptr;
-int g_write_ptr;
-struct session *g_session;
-pthread_mutex_t g_session_buffer_mutex;
+struct session g_session_buffer[MAX_CLIENT_SOCKET_SIZE];
 
-int init_session_buffer(const int buf_capacity, const int item_byte_size)
+void init_session_buffer(void)
 {
-    if (buf_capacity <= 0)
-        return -1;
-    g_session = malloc(sizeof(struct session) * buf_capacity);
-    if (g_session == NULL)
-        return -1;
+    int i;
+    g_curr_conn_count = 0;
+    for (i = 0; i < MAX_CLIENT_SOCKET_SIZE; ++i)
+        g_session_buffer[i].sockfd = INVALID_SOCKET_FD;
     pthread_mutex_init(&g_session_buffer_mutex, NULL);
-    pthread_mutex_lock(&g_session_buffer_mutex);
-    g_buf_size = 0;
-    g_buf_capacity = buf_capacity;
-    g_read_ptr = 0;
-    g_write_ptr = 0;
-    pthread_mutex_unlock(&g_session_buffer_mutex);
-    return 0;
 }
 
-int destroy_session_buffer(void)
+void destroy_session_buffer(void)
 {
-    pthread_mutex_lock(&g_session_buffer_mutex);
-    if (g_session == NULL) {
-        return -1;
-    }
-    free(g_session);
-    g_buf_size = 0;
-    g_buf_capacity = 0;
-    g_read_ptr = 0;
-    g_write_ptr = 0;
-    g_session = NULL;
-    pthread_mutex_unlock(&g_session_buffer_mutex);
+    clear_full_buffer();
     pthread_mutex_destroy(&g_session_buffer_mutex);
-    return 0;
 }
 
-int clear_full_buffer(void)
+void clear_full_buffer(void)
 {
+    int i;
     pthread_mutex_lock(&g_session_buffer_mutex);
-    if (g_session == NULL) {
-        return -1;
-    }
-    g_read_ptr = 0;
-    g_write_ptr = 0;
-    g_buf_size = 0;
-    memset(g_session, 0, sizeof(struct session) * g_buf_capacity);
+    g_curr_conn_count = 0;
+    for (i = 0; i < MAX_CLIENT_SOCKET_SIZE; ++i)
+        g_session_buffer[i].sockfd = INVALID_SOCKET_FD;
     pthread_mutex_unlock(&g_session_buffer_mutex);
-    return 0;
 }
 
-struct session *create_new_session(int sockfd, struct sockaddr_in *addr)
+struct session *create_session(int sockfd, struct sockaddr_in *addr)
 {
     int flag;
-    struct session temp;
-    struct session *new_session_ptr;
-    u8 ip_bytes[4];
-    temp.sockfd = sockfd;
-    temp.port = ntohs(addr->sin_port);
-    memcpy(&(temp.ipv4), &(addr->sin_addr.s_addr), sizeof(unsigned char) * 4);
-    // NOTICE : both client and server sockets are setted into blocking mode
+    //printf("create_session() - sockfd : %d\n", sockfd);
+    if (sockfd == INVALID_SOCKET_FD) {
+        printf("create_session() - invalid socket\n");
+        return NULL;
+    }
+    /* NOTICE : if use too many sockets, socket alreay using problem will arise, socket : 0 */
+    if (g_session_buffer[sockfd].sockfd != INVALID_SOCKET_FD) {
+        printf("create_session() - socket \'%d\' alrealy used, %d\n", sockfd, g_session_buffer[sockfd].sockfd);
+        return NULL;
+    }
+    if (g_curr_conn_count > 0 && g_curr_conn_count >= MAX_CLIENT_SOCKET_SIZE) {
+        printf("create_session() : cannot add more items\n");
+        return NULL;
+    }
     flag = fcntl(sockfd, F_GETFL, 0);
     if (flag == -1) {
-        perror("create_new_session() - failed to load socket\'s falgs ");
+        perror("create_session() - failed to load socket\'s flags ");
         return NULL;
     }
     if (fcntl(sockfd, F_SETFL, flag | O_NONBLOCK) == -1) {
-        perror("create_new_session() - failed set socket to non-blocking mode ");
+        perror("create_session() - failed set socket to non-blocking mode ");
         return NULL;
     }
-    // NOTICE : same as g_session_buffer[g_write_ptr] = item;
     pthread_mutex_lock(&g_session_buffer_mutex);
-    if (g_buf_size > 0 && g_buf_size >= g_buf_capacity) {
-        printf("create_new_session() : cannot add more items.\n");
+    g_session_buffer[sockfd].port = ntohs(addr->sin_port);
+    g_session_buffer[sockfd].sockfd = sockfd;
+    memcpy(&(g_session_buffer[sockfd].ipv4), &(addr->sin_addr.s_addr), sizeof(unsigned char) * 4);
+    pthread_mutex_unlock(&g_session_buffer_mutex);
+    return &g_session_buffer[sockfd];
+}
+
+/* TODO
+ * call this function when connection finished
+ * problems may occur when fd that should be used
+ * and retrieved again is not retrieved
+ */
+int delete_session(int sockfd)
+{
+    int err_code = 1234;
+    pthread_mutex_lock(&g_session_buffer_mutex);
+    if (g_session_buffer[sockfd].sockfd == INVALID_SOCKET_FD) {
+        printf("delete_session() - trying to delete invalid session\n");
+        return -1;
+    }
+retry_close:
+    if (close(g_session_buffer[sockfd].sockfd) == -1) {
+        err_code = errno;
         pthread_mutex_unlock(&g_session_buffer_mutex);
-        return NULL;
-    }
-    memcpy(&(g_session[g_write_ptr]), &temp, sizeof(struct session));
-    new_session_ptr = &(g_session[g_write_ptr]);
-    g_write_ptr = (g_write_ptr + 1) % g_buf_capacity;
-    ++g_buf_size;
-    pthread_mutex_unlock(&g_session_buffer_mutex);
-    return new_session_ptr;
-}
-
-int delete_front_session(void)
-{
-    pthread_mutex_lock(&g_session_buffer_mutex);
-    if (g_buf_size <= 0) {
-        printf("delete_front_session() : cannot remove more!\n");
+        perror("delete_session() - error occured on closing socket ");
+        if (err_code == EBADF)
+            return 0;
+        else if (err_code == EINTR)
+            goto retry_close;
         return -1;
     }
-    g_session[g_read_ptr];
-    memset(&g_session[g_read_ptr], 0, sizeof(struct session));
-    g_read_ptr = (g_read_ptr + 1) % g_buf_capacity;
-    --g_buf_size;
+    g_session_buffer[sockfd].sockfd = INVALID_SOCKET_FD;
     pthread_mutex_unlock(&g_session_buffer_mutex);
+    // NOTICE : g_server_mutex not still used before -> not use mutex yet
+    // pthread_mutex_lock(&g_server_mutex);
+    epoll_ctl(g_server_incoming_epfd, EPOLL_CTL_DEL, g_session_buffer[sockfd].sockfd, NULL);
+    // pthread_mutex_unlock(&g_server_mutex);
     return 0;
 }
 
-int pop_session_buffer_copy(struct session *sess)
+void *session_manager(void *arg)
 {
-    if (g_buf_size <= 0)
-        return -1;
-    pthread_mutex_lock(&g_session_buffer_mutex);
-    memcpy(sess, &(g_session[g_read_ptr]), sizeof(struct session));
-    pthread_mutex_unlock(&g_session_buffer_mutex);
-    return 0;
+    return NULL;
 }

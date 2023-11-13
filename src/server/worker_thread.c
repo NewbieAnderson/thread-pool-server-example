@@ -110,21 +110,28 @@ int recv_and_push_to_queue(int sockfd)
     }
     pthread_mutex_lock(&g_task_queue_mutex);
     nbytes = recv(sockfd, g_task_queue[g_task_queue_write_ptr].recv_buffer, MAX_BUFFER_SIZE, 0);
+    g_task_queue[g_task_queue_write_ptr].nbytes = nbytes;
     if (nbytes == 0) {
         pthread_mutex_unlock(&g_task_queue_mutex);
-        close(sockfd);
+        if (delete_session(sockfd) == -1) {
+            printf("recv_and_push_to_queue() - failed to delete session\n");
+            return -1;
+        }
         printf("recv_and_push_to_queue() - read 0 bytes, client disconnected\n");
         return 0;
     } else if (nbytes == -1) {
         perror("recv_and_push_to_queue() - failed to read bytes ");
         pthread_mutex_unlock(&g_task_queue_mutex);
-        close(sockfd);
+        if (delete_session(sockfd) == -1) {
+            printf("recv_and_push_to_queue() - failed to delete session\n");
+            return -1;
+        }
         return -1;
     }
     g_task_queue_write_ptr = (g_task_queue_write_ptr + 1) % g_task_queue_capacity;
     ++g_task_queue_size;
     pthread_mutex_unlock(&g_task_queue_mutex);
-    return 0;
+    return nbytes;
 }
 
 int pop_task_queue_copy(struct task_node *task)
@@ -175,7 +182,7 @@ static void *thread_routine(void *thread_num)
             pop_task_queue_copy(&task);
             if (task.sockfd == -1)
                 continue;
-            printf("thread #%d, message : %s\n", thread_idx + 1, task.recv_buffer);
+            printf("thread #%d, message : %s(total %d bytes)\n", thread_idx + 1, task.recv_buffer, task.nbytes);
             task.sockfd = -1;
         }
         g_thread_state[thread_idx] = THREAD_STATE_IS_NOT_WORKING;

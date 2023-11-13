@@ -13,6 +13,7 @@
 
 struct task_node {
     int sockfd;
+    int nbytes;
     char recv_buffer[MAX_BUFFER_SIZE];
 };
 
