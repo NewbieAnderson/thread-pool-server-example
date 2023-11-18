@@ -16,11 +16,11 @@
 #include "worker_thread.h"
 
 extern int g_server_socket;
+extern int g_server_port;
 extern int g_server_incoming_epfd;
 extern struct epoll_event *g_server_incomming_events;
-extern pthread_mutex_t g_server_mutex;
 
-static int g_server_port;
+static pthread_mutex_t g_server_mutex;
 static int g_server_thread_count;
 static struct sockaddr_in g_server_addr;
 

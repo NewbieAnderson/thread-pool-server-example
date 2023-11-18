@@ -1,9 +1,9 @@
 #include "server.h"
 
 int g_server_socket;
+int g_server_port;
 int g_server_incoming_epfd;
 struct epoll_event *g_server_incomming_events;
-pthread_mutex_t g_server_mutex;
 
 int create_server(int port, int thread_count)
 {
@@ -21,7 +21,7 @@ int create_server(int port, int thread_count)
     }
     setsockopt(g_server_socket, SOL_SOCKET, SO_REUSEADDR, &optval, sizeof(optval));
     getrlimit(RLIMIT_NOFILE, &rlim);
-    rlim.rlim_cur = MAX_CLIENT_SOCKET_SIZE;
+    rlim.rlim_cur = MAX_CONNECTION_SIZE;
     if (setrlimit(RLIMIT_NOFILE, &rlim) != 0) {
         perror("setrlimit ");
         return 1;
@@ -40,12 +40,8 @@ int create_server(int port, int thread_count)
         return -1;
     }
     pthread_mutex_init(&g_server_mutex, NULL);
-    if (listen(g_server_socket, MAX_CONNECTION_SIZE) == -1) {
-        perror("create_server() - failed to listen server socket");
-        return -1;
-    }
     init_session_buffer();
-    event.data.ptr = create_session(g_server_socket, &g_server_addr);
+    event.data.ptr = create_session_lock(g_server_socket, &g_server_addr);
     if (event.data.ptr == NULL) {
         printf("create_server() - failed to create new server's session\n");
         return -1;
@@ -59,8 +55,12 @@ int create_server(int port, int thread_count)
         perror("create_server() - failed to allocate epoll_event objects ");
         return -1;
     }
-    if (init_thread_pool(g_server_thread_count, MAX_CONNECTION_SIZE) == -1) {
+    if (init_thread_pool(g_server_thread_count, MAX_WAITING_QUEUE_SIZE) == -1) {
         printf("create_server() - failed to init thread pool\n");
+        return -1;
+    }
+    if (listen(g_server_socket, MAX_CONNECTION_SIZE) == -1) {
+        perror("create_server() - failed to listen server socket");
         return -1;
     }
     return 0;
@@ -68,9 +68,11 @@ int create_server(int port, int thread_count)
 
 int delete_server(void)
 {
-    destroy_thread_pool();
+    destroy_thread_pool_lock();
     destroy_session_buffer();
     close(g_server_socket);
     pthread_mutex_destroy(&g_server_mutex);
+    free(g_server_incomming_events);
+    g_server_incomming_events = NULL;
     return 0;
 }

@@ -40,10 +40,9 @@ int init_thread_pool(int thread_count, int max_wating_queue_size)
         goto failed_g_thread_sync_cond;
     }
     for (i = 0; i < g_thread_count; ++i) {
-        if (pthread_create(&g_threads[i], NULL, thread_routine, (void *)i) < 0) {
+        if (pthread_create(&g_threads[i], NULL, thread_routine_lock, (void *)i) < 0) {
             printf("init_thread_pool() - failed to create thread %d\n", i + 1);
             goto failed_create_thread;
-
         }
     }
     return 0;
@@ -71,7 +70,7 @@ failed_g_task_queue:
     return -1;
 }
 
-int destroy_thread_pool(void)
+int destroy_thread_pool_lock(void)
 {
     int i;
     pthread_mutex_lock(&g_task_queue_mutex);
@@ -101,7 +100,7 @@ int destroy_thread_pool(void)
     return 0;
 }
 
-int recv_and_push_to_queue(int sockfd)
+int recv_and_push_to_queue_lock(int sockfd)
 {
     int nbytes;
     if (g_task_queue_size >= g_task_queue_capacity) {
@@ -113,16 +112,19 @@ int recv_and_push_to_queue(int sockfd)
     g_task_queue[g_task_queue_write_ptr].nbytes = nbytes;
     if (nbytes == 0) {
         pthread_mutex_unlock(&g_task_queue_mutex);
-        if (delete_session(sockfd) == -1) {
+        if (delete_session_lock(sockfd) == -1) {
             printf("recv_and_push_to_queue() - failed to delete session\n");
             return -1;
         }
         printf("recv_and_push_to_queue() - read 0 bytes, client disconnected\n");
         return 0;
     } else if (nbytes == -1) {
-        perror("recv_and_push_to_queue() - failed to read bytes ");
         pthread_mutex_unlock(&g_task_queue_mutex);
-        if (delete_session(sockfd) == -1) {
+        if (errno == EAGAIN || errno == EWOULDBLOCK) {
+            printf("recv_and_push_to_queue() - there is no bytes to read in %d socket\n", sockfd);
+        }
+        perror("recv_and_push_to_queue() - failed to read bytes ");
+        if (delete_session_lock(sockfd) == -1) {
             printf("recv_and_push_to_queue() - failed to delete session\n");
             return -1;
         }
@@ -134,7 +136,7 @@ int recv_and_push_to_queue(int sockfd)
     return nbytes;
 }
 
-int pop_task_queue_copy(struct task_node *task)
+int pop_task_queue_copy_lock(struct task_node *task)
 {
     if (g_task_queue_size <= 0) {
         printf("pop_task_queue_copy() - cannot remove anymore\n");
@@ -164,7 +166,7 @@ int try_wake_up_thread(void)
     return 0;
 }
 
-static void *thread_routine(void *thread_num)
+static void *thread_routine_lock(void *thread_num)
 {
     struct task_node task = {
         .sockfd = -1,
@@ -179,7 +181,7 @@ static void *thread_routine(void *thread_num)
             pthread_cond_wait(&(g_thread_sync_cond[thread_idx]), &(g_thread_sync_mutex[thread_idx]));
         pthread_mutex_unlock(&(g_thread_sync_mutex[thread_idx]));
         while (g_task_queue_size > 0) {
-            pop_task_queue_copy(&task);
+            pop_task_queue_copy_lock(&task);
             if (task.sockfd == -1)
                 continue;
             printf("thread #%d, message : %s(total %d bytes)\n", thread_idx + 1, task.recv_buffer, task.nbytes);

@@ -31,14 +31,14 @@ static pthread_cond_t *g_thread_sync_cond;
 
 int init_thread_pool(int thread_count, int max_waiting_queue_size);
 
-int destroy_thread_pool(void);
+int destroy_thread_pool_lock(void);
 
-int recv_and_push_to_queue(int sockfd);
+int recv_and_push_to_queue_lock(int sockfd);
 
-int pop_task_queue_copy(struct task_node *task);
+int pop_task_queue_copy_lock(struct task_node *task);
 
 int try_wake_up_thread(void);
 
-static void *thread_routine(void *thread_num);
+static void *thread_routine_lock(void *thread_num);
 
 #endif

@@ -1,21 +1,20 @@
 #include "server.h"
 
-int main(void)
+int main(char *argv[], int argc)
 {
     int i;
     int ret;
     int nfds;
-    int flag = 0;
     int client_socket;
-    const int on = 1;
     struct epoll_event event;
     struct sockaddr_in client_addr;
     struct session *session_ptr = NULL;
     socklen_t client_addr_len = sizeof(struct sockaddr_in);
-    if (create_server(8080, 8) == -1) {
+    if (create_server(atoi(argv[1]), 8) == -1) {
         printf("main() - failed to create server.\n");
         goto exit_loop;
     }
+    printf("server running at %d port\n", g_server_port);
     while (1) {
         nfds = epoll_wait(g_server_incoming_epfd, g_server_incomming_events, MAX_EPOLL_EVENT_SIZE, -1);
         if (nfds == -1) {
@@ -30,8 +29,7 @@ int main(void)
                     perror("failed to create new connection ");
                     goto exit_loop;
                 }
-                printf("!\n");
-                event.data.ptr = create_session(client_socket, &client_addr);
+                event.data.ptr = create_session_lock(client_socket, &client_addr);
                 if (event.data.ptr == NULL) {
                     printf("failed to create new client session\n");
                     goto exit_loop;
@@ -43,7 +41,7 @@ int main(void)
                 }
                 continue;
             }
-            ret = recv_and_push_to_queue(session_ptr->sockfd);
+            ret = recv_and_push_to_queue_lock(session_ptr->sockfd);
             if (ret == -1) {
                 printf("failed to add request to queue\n");
                 goto exit_loop;
@@ -55,11 +53,10 @@ int main(void)
                     printf("client arbitrarily has been shut down connection\n");
                 else
                     perror("failed to write towards server ");
-                if (delete_session(session_ptr->sockfd) == -1) {
+                if (delete_session_lock(session_ptr->sockfd) == -1) {
                     printf("failed to delete session\n");
                     goto exit_loop;
                 }
-                continue;
             }
         }
         try_wake_up_thread();

@@ -1,36 +1,33 @@
 #include "session_buffer.h"
 
-struct session g_session_buffer[MAX_CLIENT_SOCKET_SIZE];
-
 void init_session_buffer(void)
 {
     int i;
     g_curr_conn_count = 0;
-    for (i = 0; i < MAX_CLIENT_SOCKET_SIZE; ++i)
+    for (i = 0; i < MAX_CONNECTION_SIZE; ++i)
         g_session_buffer[i].sockfd = INVALID_SOCKET_FD;
     pthread_mutex_init(&g_session_buffer_mutex, NULL);
 }
 
 void destroy_session_buffer(void)
 {
-    clear_full_buffer();
+    clear_full_buffer_lock();
     pthread_mutex_destroy(&g_session_buffer_mutex);
 }
 
-void clear_full_buffer(void)
+void clear_full_buffer_lock(void)
 {
     int i;
     pthread_mutex_lock(&g_session_buffer_mutex);
     g_curr_conn_count = 0;
-    for (i = 0; i < MAX_CLIENT_SOCKET_SIZE; ++i)
+    for (i = 0; i < MAX_CONNECTION_SIZE; ++i)
         g_session_buffer[i].sockfd = INVALID_SOCKET_FD;
     pthread_mutex_unlock(&g_session_buffer_mutex);
 }
 
-struct session *create_session(int sockfd, struct sockaddr_in *addr)
+struct session *create_session_lock(int sockfd, struct sockaddr_in *addr)
 {
     int flag;
-    //printf("create_session() - sockfd : %d\n", sockfd);
     if (sockfd == INVALID_SOCKET_FD) {
         printf("create_session() - invalid socket\n");
         return NULL;
@@ -40,7 +37,7 @@ struct session *create_session(int sockfd, struct sockaddr_in *addr)
         printf("create_session() - socket \'%d\' alrealy used, %d\n", sockfd, g_session_buffer[sockfd].sockfd);
         return NULL;
     }
-    if (g_curr_conn_count > 0 && g_curr_conn_count >= MAX_CLIENT_SOCKET_SIZE) {
+    if (g_curr_conn_count > 0 && g_curr_conn_count >= MAX_CONNECTION_SIZE) {
         printf("create_session() : cannot add more items\n");
         return NULL;
     }
@@ -66,7 +63,7 @@ struct session *create_session(int sockfd, struct sockaddr_in *addr)
  * problems may occur when fd that should be used
  * and retrieved again is not retrieved
  */
-int delete_session(int sockfd)
+int delete_session_lock(int sockfd)
 {
     int err_code = 1234;
     pthread_mutex_lock(&g_session_buffer_mutex);

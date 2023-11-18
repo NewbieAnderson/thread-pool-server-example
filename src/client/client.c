@@ -1,18 +1,19 @@
+#include <arpa/inet.h>
+#include <fcntl.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
-#include <arpa/inet.h>
 #include <sys/resource.h>
 #include <sys/socket.h>
 
 #include "./client.h"
 
-#define CLIENT_SIZE 1000
-#define REQUEST_TEST_COUNT 3
-#define SERVER_PORT 8080
-#define SERVER_IP_STRING "127.0.0.1"
+#define CLIENT_SIZE 10000
 #define MAX_CLIENT_SOCKET_SIZE 50000
+#define TICK_RATE 3
+#define SERVER_IP_STRING "127.0.0.1"
+#define SERVER_PORT 8080
 
 int main(void)
 {
@@ -42,8 +43,17 @@ int main(void)
             perror("failed to connect server ");
             return -1;
         }
+        int flag = fcntl(cilent_socket[i], F_GETFL, 0);
+        if (flag == -1) {
+            perror("failed to load socket\'s flags ");
+            return -1;
+        }
+        if (fcntl(cilent_socket[i], F_SETFL, flag | O_NONBLOCK) == -1) {
+            perror("failed set socket to non-blocking mode ");
+            return -1;
+        }
     }
-    for (i = 0; i < REQUEST_TEST_COUNT; ++i) {
+    for (i = 0; i < TICK_RATE; ++i) {
         for (j = 0; j < CLIENT_SIZE; ++j) {
             snprintf(send_buf, sizeof(send_buf), "i am client %d!\n", cilent_socket[j]);
             if (write(cilent_socket[j], send_buf, strlen(send_buf)) == -1) {
@@ -53,11 +63,12 @@ int main(void)
             //sync();
         }
     }
+    sleep(5);
     char recv_buf[4096] = { 0, };
     for (j = 0; j < CLIENT_SIZE; ++j) {
-        recv(cilent_socket[j], recv_buf, sizeof(recv_buf), 0);
+        if (recv(cilent_socket[j], recv_buf, sizeof(recv_buf), 0) == -1)
+            perror("failed to recv message ");
     }
-    sleep(3);
     for (i = 0; i < CLIENT_SIZE; ++i)
         close(cilent_socket[i]);
     return 0;
