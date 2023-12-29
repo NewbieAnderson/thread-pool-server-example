@@ -8,24 +8,24 @@ SERVER_SRCS = $(SRCDIR)/server/main.c \
 			  $(SRCDIR)/server/session_buffer.c \
 			  $(SRCDIR)/server/worker_thread.c
 
-CLIENT_SRCS = $(SRCDIR)/client/client.c
+TEST_SRCS = $(SRCDIR)/test/test_local.c
 
 SERVER_BINARY = $(BINDIR)/server/server
 
-CLIENT_BINARY = $(BINDIR)/client/client
+TEST_BINARY = $(BINDIR)/test/test
 
-all: server client
+all: server test
 
 server: $(SERVER_BINARY)
 
-client: $(CLIENT_BINARY)
+test: $(TEST_BINARY)
 
 $(SERVER_BINARY): $(SERVER_SRCS)
 	$(CC) $(CFLAGS) -o $@ $^
 
-$(CLIENT_BINARY): $(CLIENT_SRCS)
+$(TEST_BINARY): $(TEST_SRCS)
 	$(CC) $(CFLAGS) -o $@ $^
 
 clean:
 	rm -f $(SERVER_BINARY)
-	rm -f $(CLIENT_BINARY)
+	rm -f $(TEST_BINARY)
