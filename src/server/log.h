@@ -6,11 +6,9 @@
 #include <pthread.h>
 #include <time.h>
 
-/*
-static pthread_t g_logger_thread;
-static pthread_t g_logger_mutex;
-static struct timeval g_logger_timer;
-*/
+//static pthread_t g_logger_thread;
+//static pthread_t g_logger_mutex;
+//static struct timeval g_logger_timer;
 
 int init_logger(void);
 

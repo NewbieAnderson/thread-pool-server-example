@@ -10,7 +10,7 @@ int main(char *argv[], int argc)
     struct sockaddr_in client_addr;
     struct session *session_ptr = NULL;
     socklen_t client_addr_len = sizeof(struct sockaddr_in);
-    if (create_server(atoi(argv[1]), 8) == -1) {
+    if (create_server(8080, 8) == -1) {
         printf("main() - failed to create server.\n");
         goto exit_loop;
     }
@@ -41,14 +41,8 @@ int main(char *argv[], int argc)
                 }
                 continue;
             }
-            ret = recv_and_push_to_queue_lock(session_ptr->sockfd);
-            if (ret == -1) {
-                printf("failed to add request to queue\n");
-                goto exit_loop;
-            } else if (ret == 0) {
-                continue;
-            }
             if (write(session_ptr->sockfd, "disconn_test\n", strlen("disconn_test\n")) == -1) {
+                printf("write() - failed to write()!\n");
                 if (errno == EPIPE || errno == ECONNRESET)
                     printf("client arbitrarily has been shut down connection\n");
                 else
@@ -57,6 +51,13 @@ int main(char *argv[], int argc)
                     printf("failed to delete session\n");
                     goto exit_loop;
                 }
+            }
+            ret = recv_and_push_to_queue_lock(session_ptr->sockfd);
+            if (ret == -1) {
+                printf("failed to add request to queue\n");
+                goto exit_loop;
+            } else if (ret == 0) {
+                continue;
             }
         }
         try_wake_up_thread();
