@@ -12,7 +12,7 @@ TEST_SRCS = $(SRCDIR)/test/test_local.c
 
 SERVER_BINARY = $(BINDIR)/server/server
 
-TEST_BINARY = $(BINDIR)/test/test
+TEST_BINARY = $(BINDIR)/test/test_local
 
 all: server test
 
